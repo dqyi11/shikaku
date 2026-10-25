@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Shikaku Puzzle</title>
-<meta name="description" content="Shikaku logic puzzle: split the grid into rectangles. Five levels from 8×8 to 20×20, with a timer and best times.">
+<meta name="description" content="Shikaku logic puzzle: split the grid into rectangles. Five levels from 8×8 to 50×50, with a timer and best times.">
 <meta name="theme-color" content="#EEF2F7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0E1525" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='1' y='1' width='14' height='30' rx='3' fill='%23FFD66B' stroke='%231A2846' stroke-width='2'/%3E%3Crect x='17' y='1' width='14' height='14' rx='3' fill='%2393C3FF' stroke='%231A2846' stroke-width='2'/%3E%3Crect x='17' y='17' width='14' height='14' rx='3' fill='%238FD9B6' stroke='%231A2846' stroke-width='2'/%3E%3C/svg%3E">
@@ -134,24 +134,49 @@ button { font: inherit; color: inherit; }
 .play { --board-size: min(100%, 760px, max(300px, calc(100vh - 250px))); }
 @supports (height: 100dvh) { .play { --board-size: min(100%, 760px, max(300px, calc(100dvh - 250px))); } }
 .board-wrap { position: relative; width: var(--board-size); max-width: 100%; }
+.board-scroll {
+  position: relative; max-width: 100%; overflow: auto; overscroll-behavior: contain;
+  border-radius: 10px; background: var(--sheet);
+  box-shadow: 0 1px 0 var(--shade), 0 14px 32px -18px var(--shade);
+  scrollbar-width: thin; scrollbar-color: var(--grid-strong) transparent;
+}
 .board {
-  --n: 5; --cell: 60px;
-  --gap: max(2px, calc(var(--cell) * 0.07));
-  position: relative; width: 100%; aspect-ratio: 1; max-width: 100%;
+  --n: 8; --cell: 60px;
+  --gap: max(1.5px, calc(var(--cell) * 0.07));
+  position: relative; width: var(--board-px, 100%); height: var(--board-px, auto); aspect-ratio: 1;
   background: var(--sheet);
   border: 2px solid var(--grid-strong);
   border-radius: 8px;
-  box-shadow: 0 1px 0 var(--shade), 0 14px 32px -18px var(--shade);
   touch-action: none; user-select: none; -webkit-user-select: none;
   cursor: crosshair;
+  overflow: hidden; overflow: clip;
 }
-.board:focus-visible { outline-offset: 4px; }
+.board:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 .layer { position: absolute; inset: 0; }
-.cells { display: grid; grid-template-columns: repeat(var(--n), 1fr); grid-template-rows: repeat(var(--n), 1fr); border-radius: 6px; overflow: hidden; }
-.cell { box-shadow: inset -1px -1px 0 var(--grid); }
-.cell.r { box-shadow: inset 0 -1px 0 var(--grid); }
-.cell.b { box-shadow: inset -1px 0 0 var(--grid); }
-.cell.r.b { box-shadow: none; }
+.cells {
+  border-radius: 6px;
+  background-image: linear-gradient(to right, var(--grid) 1px, transparent 1px), linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: var(--cell) var(--cell);
+  background-position: -1px -1px;
+}
+.zoom {
+  display: flex; gap: 2px; padding: 3px; margin-right: auto; margin-left: 4px; align-self: center;
+  background: var(--sheet);
+  border: 1.5px solid var(--grid-strong); border-radius: 11px;
+}
+.zoom[hidden] { display: none; }
+.zoom button {
+  min-width: 36px; height: 34px; padding: 0 8px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--ink); cursor: pointer;
+  font: 700 19px/1 var(--f-mono);
+}
+.zoom button.fit { font: 600 13px/1 var(--f-body); }
+.zoom button:hover:not(:disabled) { background: var(--accent-soft); }
+.zoom button:disabled { opacity: .35; cursor: default; }
+.overlay.busy { background: var(--sheet); border: 2px solid var(--grid-strong); z-index: 6; }
+.overlay.busy .card { box-shadow: none; border: 0; }
+.spinner { width: 34px; height: 34px; border-radius: 50%; border: 4px solid var(--grid); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .tile, .preview, .kcursor, .clue {
   position: absolute;
@@ -219,6 +244,8 @@ button { font: inherit; color: inherit; }
 }
 .preview.fit b { background: var(--good); color: var(--sheet); }
 .preview.inside b { bottom: auto; top: 4px; left: 4px; }
+.preview.flip b { left: auto; right: -2px; }
+.preview.inside.flip b { right: 4px; }
 
 .kcursor { pointer-events: none; border: 3px solid var(--accent); border-radius: 4px; }
 
@@ -318,7 +345,7 @@ kbd { font: 600 11px/1 var(--f-mono); padding: 2px 5px; border: 1px solid var(--
   .btn small { font-size: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .tile.fresh i, .celebrate .tile i { animation: none; }
+  .tile.fresh i, .celebrate .tile i, .spinner { animation: none; }
   .btn { transition: none; }
 }
 </style>
@@ -340,17 +367,31 @@ kbd { font: 600 11px/1 var(--f-mono); padding: 2px 5px; border: 1px solid var(--
           <span id="time">0:00</span><span id="pen" class="pen" hidden></span>
           <span id="solvedChip" class="solved-chip" hidden>Solved</span>
         </div>
+        <div class="zoom" id="zoomUI" role="group" aria-label="Zoom" hidden>
+          <button type="button" id="zoomOut" aria-label="Zoom out" title="Zoom out">−</button>
+          <button type="button" id="zoomFit" class="fit" title="Show the whole board">Fit</button>
+          <button type="button" id="zoomIn" aria-label="Zoom in" title="Zoom in">+</button>
+        </div>
         <div class="tags"><b id="lvTag">Easy · 8×8</b><span id="pzTag">Puzzle 1</span></div>
       </div>
 
       <div class="board-wrap">
-        <div class="board" id="board" tabindex="0" role="application"
-             aria-label="Puzzle grid. Drag to draw a rectangle, tap a rectangle to erase it. With a keyboard: arrow keys move, Enter starts and finishes a rectangle, Delete erases.">
-          <div class="layer cells" id="cells"></div>
-          <div class="layer" id="tiles"></div>
-          <div class="layer" id="clues"></div>
-          <div class="preview" id="preview" hidden><b></b></div>
-          <div class="kcursor" id="kcursor" hidden></div>
+        <div class="board-scroll" id="scroller">
+          <div class="board" id="board" tabindex="0" role="application"
+               aria-label="Puzzle grid. Drag to draw a rectangle, tap a rectangle to erase it. With a keyboard: arrow keys move, Enter starts and finishes a rectangle, Delete erases, plus and minus zoom.">
+            <div class="layer cells" id="cells"></div>
+            <div class="layer" id="tiles"></div>
+            <div class="layer" id="clues"></div>
+            <div class="preview" id="preview" hidden><b></b></div>
+            <div class="kcursor" id="kcursor" hidden></div>
+          </div>
+        </div>
+        <div class="overlay busy" id="busyOv" hidden>
+          <div class="card">
+            <div class="spinner" aria-hidden="true"></div>
+            <h2>Making your puzzle</h2>
+            <p id="busyText"></p>
+          </div>
         </div>
         <div class="overlay pause" id="pauseOv" hidden>
           <div class="card">
@@ -416,8 +457,9 @@ kbd { font: 600 11px/1 var(--f-mono); padding: 2px 5px; border: 1px solid var(--
           <li style="--sw: var(--t2)">Every rectangle holds exactly one number.</li>
           <li style="--sw: var(--t1)">That number is the rectangle's area: a 6 needs 6 squares, like 2×3 or 1×6.</li>
           <li style="--sw: var(--t3)">Tap a rectangle to erase it. Striped ones are wrong.</li>
+          <li style="--sw: var(--t4)">Big boards scroll. Pinch or use − and + to zoom, and drag with two fingers to move around.</li>
         </ul>
-        <p class="keys">Keyboard: <kbd>←↑→↓</kbd> move, <kbd>Enter</kbd> start and finish, <kbd>Del</kbd> erase, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo.</p>
+        <p class="keys">Keyboard: <kbd>←↑→↓</kbd> move, <kbd>Enter</kbd> start and finish, <kbd>Del</kbd> erase, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo, <kbd>+</kbd> <kbd>−</kbd> zoom.</p>
       </section>
     </aside>
   </main>
@@ -431,10 +473,10 @@ const Shikaku = (() => {
      2 = also needs overlap reasoning (cells every shape of a clue must cover), 3 = needs more than that. */
   const LEVELS = [
     { id: "easy8",    name: "Easy",   size: 8,  minA: 2, maxA: 10, ones: 1, grade: [1, 3] },
-    { id: "medium10", name: "Medium", size: 10, minA: 3, maxA: 12, ones: 1, grade: [1, 3] },
-    { id: "hard13",   name: "Hard",   size: 13, minA: 3, maxA: 16, ones: 2, grade: [1, 3] },
-    { id: "expert16", name: "Expert", size: 16, minA: 4, maxA: 20, ones: 2, grade: [2, 2] },
-    { id: "master20", name: "Master", size: 20, minA: 4, maxA: 24, ones: 3, grade: [2, 3] },
+    { id: "medium16", name: "Medium", size: 16, minA: 3, maxA: 20, ones: 2, grade: [1, 3] },
+    { id: "hard32",   name: "Hard",   size: 32, minA: 4, maxA: 28, ones: 3, grade: [1, 3] },
+    { id: "expert40", name: "Expert", size: 40, minA: 4, maxA: 32, ones: 4, grade: [2, 3] },
+    { id: "master50", name: "Master", size: 50, minA: 4, maxA: 36, ones: 5, grade: [2, 3] },
   ];
 
   function rng(seed) {
@@ -450,18 +492,21 @@ const Shikaku = (() => {
 
   /* Count exact covers up to `limit`, giving up after `budget` search steps.
      cols: number of columns; rows: arrays of column indices. Returns a count, or -1 if out of budget. */
-  function countCovers(cols, rows, limit, budget) {
+  function countCovers(cols, rows, limit, budget, sols) {
     let n = cols + 1;
     for (const r of rows) n += r.length;
     const L = new Int32Array(n), R = new Int32Array(n), U = new Int32Array(n), D = new Int32Array(n), C = new Int32Array(n);
     const S = new Int32Array(cols + 1);
     for (let i = 0; i <= cols; i++) { L[i] = i - 1; R[i] = i + 1; U[i] = D[i] = i; C[i] = i; }
     L[0] = cols; R[cols] = 0;
+    const RowOf = new Int32Array(n);
     let idx = cols + 1;
-    for (const row of rows) {
+    for (let ri = 0; ri < rows.length; ri++) {
+      const row = rows[ri];
       let first = -1;
       for (const c of row) {
         const col = c + 1, node = idx++;
+        RowOf[node] = ri;
         C[node] = col; U[node] = U[col]; D[node] = col; D[U[col]] = node; U[col] = node; S[col]++;
         if (first < 0) { first = node; L[node] = R[node] = node; }
         else { R[node] = first; L[node] = L[first]; R[L[first]] = node; L[first] = node; }
@@ -478,8 +523,9 @@ const Shikaku = (() => {
       L[R[c]] = c; R[L[c]] = c;
     };
     let count = 0, steps = 0, aborted = false;
+    const stack = [];
     const search = () => {
-      if (R[0] === 0) { count++; return count >= limit; }
+      if (R[0] === 0) { count++; if (sols) sols.push(stack.slice()); return count >= limit; }
       if (++steps > budget) { aborted = true; return true; }
       let c = R[0], best = S[c];
       for (let j = R[c]; j !== 0; j = R[j]) if (S[j] < best) { best = S[j]; c = j; if (best <= 1) break; }
@@ -488,7 +534,9 @@ const Shikaku = (() => {
       let stop = false;
       for (let r = D[c]; r !== c && !stop; r = D[r]) {
         for (let j = R[r]; j !== r; j = R[j]) cover(C[j]);
+        stack.push(RowOf[r]);
         stop = search();
+        stack.pop();
         for (let j = L[r]; j !== r; j = L[j]) uncover(C[j]);
       }
       uncover(c);
@@ -518,21 +566,25 @@ const Shikaku = (() => {
     return out;
   }
 
-  /* clues: [{x,y,n}]. Returns number of solutions (capped at 2), or -1 if undecided. */
-  function countSolutions(w, h, clues, budget = 200000) {
+  /* clues: [{x,y,n}]. Returns {count (capped at 2, -1 if undecided), sols: up to two arrays of rects indexed by clue}. */
+  function analyze(w, h, clues, budget = 400000) {
     const clueGrid = new Int16Array(w * h);
     for (const c of clues) clueGrid[c.y * w + c.x] = c.n;
-    const rows = [];
+    const rows = [], meta = [];
     for (let k = 0; k < clues.length; k++) {
       const c = clues[k];
       for (const r of candidatesFor(w, h, clueGrid, c.x, c.y, c.n)) {
         const row = [w * h + k];
         for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) row.push(y * w + x);
-        rows.push(row);
+        rows.push(row); meta.push({ k, r });
       }
     }
-    return countCovers(w * h + clues.length, rows, 2, budget);
+    const raw = [];
+    const count = countCovers(w * h + clues.length, rows, 2, budget, raw);
+    const sols = raw.map((sel) => { const out = new Array(clues.length); for (const ri of sel) out[meta[ri].k] = meta[ri].r; return out; });
+    return { count, sols };
   }
+  function countSolutions(w, h, clues, budget) { return analyze(w, h, clues, budget).count; }
 
   /* How much reasoning a unique puzzle needs (see LEVELS.grade). */
   function grade(w, h, clues) {
@@ -620,24 +672,65 @@ const Shikaku = (() => {
     return rects;
   }
 
-  /* Deterministic puzzle for (level, seed) with exactly one solution. */
+  /* Deterministic puzzle for (level, seed) with exactly one solution.
+     When a layout has two solutions, only the clues where the two solutions differ are moved. */
   function generate(levelId, seed) {
     const lv = LEVELS.find((l) => l.id === levelId) || LEVELS[0];
     const w = lv.size, h = lv.size;
     const rand = rng(seed);
-    for (let attempt = 0; attempt < 1500; attempt++) {
+    const spot = (r) => ({ x: r.x + Math.floor(rand() * r.w), y: r.y + Math.floor(rand() * r.h), n: r.w * r.h });
+    const maxRepairs = 30 + lv.size;
+    const same = (a, b) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+    /* Two rectangles that line up edge to edge can merge into one rectangle. */
+    const union = (a, b) => {
+      if (a.x === b.x && a.w === b.w && (a.y + a.h === b.y || b.y + b.h === a.y)) return { x: a.x, y: Math.min(a.y, b.y), w: a.w, h: a.h + b.h };
+      if (a.y === b.y && a.h === b.h && (a.x + a.w === b.x || b.x + b.w === a.x)) return { x: Math.min(a.x, b.x), y: a.y, w: a.w + b.w, h: a.h };
+      return null;
+    };
+    for (let attempt = 0; attempt < 300; attempt++) {
       const rects = randomPartition(w, h, lv, rand);
       if (!rects) continue;
-      for (let place = 0; place < 6; place++) {
-        const clues = rects.map((r) => ({
-          x: r.x + Math.floor(rand() * r.w),
-          y: r.y + Math.floor(rand() * r.h),
-          n: r.w * r.h,
-        }));
-        if (countSolutions(w, h, clues) !== 1) continue;
-        const g = grade(w, h, clues);
-        if (g < lv.grade[0] || g > lv.grade[1]) continue;
-        return { level: lv.id, seed, w, h, clues, solution: rects, grade: g, attempts: attempt + 1 };
+      const clues = rects.map(spot);
+      let stuck = new Int16Array(rects.length);
+      for (let fix = 0; fix < maxRepairs; fix++) {
+        const a = analyze(w, h, clues);
+        if (a.count < 0) break;
+        if (a.count === 1) {
+          const g = grade(w, h, clues);
+          if (g >= lv.grade[0] && g <= lv.grade[1]) {
+            return { level: lv.id, seed, w, h, clues, solution: rects, grade: g, attempts: attempt + 1, repairs: fix };
+          }
+          const k = Math.floor(rand() * clues.length);
+          clues[k] = spot(rects[k]);
+          continue;
+        }
+        const [s1, s2] = a.sols;
+        const diff = [];
+        for (let k = 0; k < clues.length; k++) if (!same(s1[k], s2[k])) diff.push(k);
+        /* The same rectangles keep tying: merge one stuck pair instead of moving clues again. */
+        let merged = false;
+        for (const k of diff) {
+          if (++stuck[k] < 4 || merged) continue;
+          for (const j of diff) {
+            if (j === k) continue;
+            const u = union(rects[k], rects[j]);
+            if (!u || u.w * u.h > lv.maxA) continue;
+            const lo = Math.min(k, j), hi = Math.max(k, j);
+            rects[lo] = u; clues[lo] = spot(u);
+            rects.splice(hi, 1); clues.splice(hi, 1);
+            stuck = new Int16Array(rects.length);
+            merged = true;
+            break;
+          }
+        }
+        if (merged) continue;
+        let moved = 0;
+        for (const k of diff) {
+          if (rects[k].w * rects[k].h === 1) continue;
+          clues[k] = spot(rects[k]);
+          moved++;
+        }
+        if (!moved) break;
       }
     }
     return null;
@@ -661,10 +754,9 @@ const Shikaku = (() => {
     return { status, solved };
   }
 
-  return { LEVELS, generate, check, countSolutions, grade, rng };
+  return { LEVELS, generate, check, analyze, countSolutions, grade, rng };
 })();
 if (typeof module !== "undefined") module.exports = Shikaku;
-
 </script>
 <script>
 (() => {
@@ -677,6 +769,7 @@ if (typeof module !== "undefined") module.exports = Shikaku;
   const $ = (id) => document.getElementById(id);
   const board = $("board"), cellsL = $("cells"), tilesL = $("tiles"), cluesL = $("clues");
   const preview = $("preview"), kcursor = $("kcursor");
+  const scroller = $("scroller"), play = document.querySelector(".play");
 
   /* ---------- formatting ---------- */
   function fmt(ms, tenths) {
@@ -793,7 +886,8 @@ if (typeof module !== "undefined") module.exports = Shikaku;
   const games = {};
   let current = LEVELS[0].id, game = null;
   const clock = { running: false, since: 0, timer: 0 };
-  let paused = false, drag = null, anchor = null, kbd = false;
+  let paused = false, drag = null, anchor = null, kbd = false, busy = false;
+  const locked = () => !game || busy || game.solved || paused;
   const cursor = { x: 0, y: 0 };
 
   const elapsed = () => game.accMs + (clock.running ? performance.now() - clock.since : 0);
@@ -812,6 +906,7 @@ if (typeof module !== "undefined") module.exports = Shikaku;
     updateTime();
   }
   function updateTime() {
+    if (!game) return;
     const ms = game.solved ? game.finalMs : elapsed() + game.penaltyMs;
     $("time").textContent = fmt(ms, game.solved);
     const pen = $("pen");
@@ -843,13 +938,6 @@ if (typeof module !== "undefined") module.exports = Shikaku;
   function buildBoard() {
     const n = game.puzzle.w;
     board.style.setProperty("--n", n);
-    const cells = [];
-    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-      const d = document.createElement("div");
-      d.className = "cell" + (x === n - 1 ? " r" : "") + (y === n - 1 ? " b" : "");
-      cells.push(d);
-    }
-    cellsL.replaceChildren(...cells);
     cluesL.replaceChildren(...game.puzzle.clues.map((c) => {
       const d = document.createElement("div");
       d.className = "clue"; setVars(d, { x: c.x, y: c.y, w: 1, h: 1 });
@@ -858,14 +946,69 @@ if (typeof module !== "undefined") module.exports = Shikaku;
     }));
     cursor.x = Math.min(cursor.x, n - 1); cursor.y = Math.min(cursor.y, n - 1);
     anchor = null; hidePreview(); drawCursor();
-    sizeBoard();
+    layout();
+    scroller.scrollLeft = 0; scroller.scrollTop = 0;
   }
-  function sizeBoard() {
-    const n = game ? game.puzzle.w : 5;
-    board.style.setProperty("--cell", (board.clientWidth / n).toFixed(2) + "px");
+
+  /* ---------- sizing & zoom ----------
+     Boards that fit at a playable square size are shown whole. Bigger boards scroll inside a viewport and can zoom. */
+  const MIN_PLAY = 20, DEFAULT_BIG = 26, MAX_CELL = 64;
+  const zoomBy = {};
+  let cellPx = 40, fitPx = 40, zoomable = false;
+  function layout() {
+    if (!game) return;
+    const n = game.puzzle.w;
+    const availW = Math.max(240, play.clientWidth);
+    /* Keep the board and the buttons under it on one screen: on a phone, one finger on the board draws instead of scrolling the page. */
+    const top = scroller.getBoundingClientRect().top + (window.scrollY || 0);
+    const below = document.querySelector(".controls").offsetHeight + 56;
+    const availH = Math.max(280, Math.min(window.innerHeight - top - below, window.innerHeight - 160));
+    fitPx = Math.max(4, Math.floor((Math.min(availW, availH, 760) - 4) / n));
+    zoomable = fitPx < MIN_PLAY;
+    cellPx = zoomable ? Math.round(Math.min(MAX_CELL, Math.max(fitPx, zoomBy[game.level] || DEFAULT_BIG))) : fitPx;
+    const boardPx = n * cellPx + 4;
+    const viewW = Math.min(availW, boardPx), viewH = Math.min(availH, boardPx);
+    play.style.setProperty("--board-size", viewW + "px");
+    scroller.style.width = viewW + "px";
+    scroller.style.height = viewH + "px";
+    board.style.setProperty("--board-px", boardPx + "px");
+    board.style.setProperty("--cell", cellPx + "px");
+    $("zoomUI").hidden = !zoomable;
+    $("zoomOut").disabled = cellPx <= fitPx;
+    $("zoomIn").disabled = cellPx >= MAX_CELL;
+    $("zoomFit").disabled = cellPx === fitPx;
   }
-  if (window.ResizeObserver) new ResizeObserver(sizeBoard).observe(board);
-  else window.addEventListener("resize", sizeBoard);
+  function zoomTo(c, ax, ay) {
+    if (!zoomable || !game) return;
+    const old = cellPx;
+    c = Math.round(Math.min(MAX_CELL, Math.max(fitPx, c)));
+    if (c === old) return;
+    const sr = scroller.getBoundingClientRect();
+    const px = ax == null ? scroller.clientWidth / 2 : ax - sr.left;
+    const py = ay == null ? scroller.clientHeight / 2 : ay - sr.top;
+    const bx = (scroller.scrollLeft + px - 2) / old, by = (scroller.scrollTop + py - 2) / old;
+    zoomBy[game.level] = c;
+    layout();
+    scroller.scrollLeft = bx * cellPx + 2 - px;
+    scroller.scrollTop = by * cellPx + 2 - py;
+  }
+  function ensureVisible(r, smooth) {
+    if (!zoomable) return;
+    const c = cellPx, pad = c;
+    const x0 = r.x * c + 2, y0 = r.y * c + 2, x1 = (r.x + r.w) * c + 2, y1 = (r.y + r.h) * c + 2;
+    const vw = scroller.clientWidth, vh = scroller.clientHeight;
+    let sl = scroller.scrollLeft, st = scroller.scrollTop;
+    if (x1 - x0 + 2 * pad > vw || x0 - pad < sl) sl = x0 - pad; else if (x1 + pad > sl + vw) sl = x1 + pad - vw;
+    if (y1 - y0 + 2 * pad > vh || y0 - pad < st) st = y0 - pad; else if (y1 + pad > st + vh) st = y1 + pad - vh;
+    if (sl === scroller.scrollLeft && st === scroller.scrollTop) return;
+    scroller.scrollTo({ left: sl, top: st, behavior: smooth && !reduceMotion ? "smooth" : "auto" });
+  }
+  let lastPlayW = 0;
+  if (window.ResizeObserver) new ResizeObserver(() => {
+    const w = play.clientWidth;
+    if (w !== lastPlayW) { lastPlayW = w; requestAnimationFrame(layout); }
+  }).observe(play);
+  window.addEventListener("resize", () => requestAnimationFrame(layout));
 
   function render(fresh) {
     const { status } = Shikaku.check(game.puzzle, game.rects);
@@ -874,7 +1017,7 @@ if (typeof module !== "undefined") module.exports = Shikaku;
       t.className = "tile " + status[i] + (r.hint ? " hint" : "") + (r === fresh && !reduceMotion ? " fresh" : "");
       setVars(t, r);
       t.style.setProperty("--c", "var(--t" + r.c + ")");
-      t.style.setProperty("--i", i);
+      t.style.setProperty("--i", Math.round(i * Math.min(1, 36 / game.rects.length)));
       const inner = document.createElement("i");
       t.appendChild(inner);
       if (status[i] !== "ok") { const em = document.createElement("em"); em.textContent = r.w * r.h; t.appendChild(em); }
@@ -897,6 +1040,7 @@ if (typeof module !== "undefined") module.exports = Shikaku;
     const fit = inside.length === 1 && inside[0].n === r.w * r.h;
     preview.classList.toggle("fit", fit);
     preview.classList.toggle("inside", r.y === 0);
+    preview.classList.toggle("flip", r.x + r.w / 2 > game.puzzle.w / 2);
     preview.firstElementChild.textContent = r.w + " × " + r.h + " = " + r.w * r.h;
     preview.hidden = false;
   }
@@ -914,7 +1058,7 @@ if (typeof module !== "undefined") module.exports = Shikaku;
   }
   function changed(fresh) { render(fresh); saveGameSoon(); checkWin(); }
   function commit(r) {
-    if (game.solved || paused) return;
+    if (locked()) return;
     pushUndo();
     const keep = game.rects.filter((o) => !overlaps(o, r));
     r.c = pickColor(r, keep);
@@ -931,17 +1075,17 @@ if (typeof module !== "undefined") module.exports = Shikaku;
     return true;
   }
   function undo() {
-    if (game.solved || paused || !game.undo.length) return;
+    if (locked() || !game.undo.length) return;
     game.rects = game.undo.pop();
     render(null); saveGameSoon();
   }
   function clearAll() {
-    if (game.solved || paused || !game.rects.length) return;
+    if (locked() || !game.rects.length) return;
     pushUndo(); game.rects = []; changed(null);
     say("Board cleared. Undo brings it back.");
   }
   function hint() {
-    if (game.solved || paused) return;
+    if (locked()) return;
     const have = new Set(game.rects.map(rkey));
     const missing = game.puzzle.solution.filter((s) => !have.has(rkey(s)));
     if (!missing.length) return;
@@ -960,6 +1104,7 @@ if (typeof module !== "undefined") module.exports = Shikaku;
     game.penaltyMs += PENALTY_MS;
     say("Hint placed. 15 seconds added to your time.");
     changed(r);
+    ensureVisible(r, true);
   }
 
   function checkWin() {
@@ -1001,7 +1146,7 @@ if (typeof module !== "undefined") module.exports = Shikaku;
 
   /* ---------- pause ---------- */
   function pause(title, text) {
-    if (game.solved) return;
+    if (!game || busy || game.solved) return;
     stopClock(); paused = true; drag = null; anchor = null; hidePreview(); drawCursor();
     $("pauseTitle").textContent = title || "Paused";
     $("pauseText").textContent = text || "The clock is stopped and the puzzle is hidden.";
@@ -1016,17 +1161,37 @@ if (typeof module !== "undefined") module.exports = Shikaku;
   }
 
   /* ---------- level & puzzle switching ---------- */
-  function load(levelId, fresh) {
+  function hydrate(id, fresh) {
+    const g = games[id];
+    if (!fresh && g && !g.pending) return g;
+    if (!fresh && g && g.pending) { const r = fromSlim(id, g.pending); if (r) return (games[id] = r); }
+    return (games[id] = makeGame(id, randomSeed()));
+  }
+  function load(levelId, fresh, mode) {
+    if (busy) return;
     stopClock();
     if (game) games[game.level] = game;
     current = levelId;
-    game = (!fresh && games[levelId]) || makeGame(levelId, randomSeed());
-    games[levelId] = game;
-    paused = false; drag = null;
-    $("pauseOv").hidden = true; $("winOv").hidden = true;
+    const g = games[levelId];
+    const slow = (fresh || !g || !!g.pending) && levelOf(levelId).size >= 32;
+    renderRecords();
+    if (!slow) { finishLoad(levelId, fresh, mode); return; }
+    busy = true; drag = null; hidePreview();
+    const l = levelOf(levelId);
+    $("busyText").textContent = "Building a " + l.size + "×" + l.size + " board with exactly one solution.";
+    $("lvTag").textContent = levelLabel(levelId);
+    $("pauseOv").hidden = true; $("winOv").hidden = true; $("busyOv").hidden = false;
+    requestAnimationFrame(() => setTimeout(() => finishLoad(levelId, fresh, mode), 0));
+  }
+  function finishLoad(levelId, fresh, mode) {
+    game = hydrate(levelId, fresh);
+    busy = false; paused = false; drag = null; anchor = null;
+    $("busyOv").hidden = true; $("pauseOv").hidden = true; $("winOv").hidden = true;
     tilesL.classList.remove("celebrate");
-    buildBoard(); render(null); renderLevels(); renderRecords();
-    if (game.solved) showWin(); else startClock();
+    buildBoard(); render(null); renderRecords();
+    if (game.solved) showWin();
+    else if (mode === "welcome") pause("Welcome back", "Your puzzle is saved. The clock starts again when you continue.");
+    else startClock();
     saveGame();
   }
 
@@ -1078,6 +1243,7 @@ if (typeof module !== "undefined") module.exports = Shikaku;
   /* ---------- saving the game in progress (this browser only) ---------- */
   let saveT = 0;
   function slim(g) {
+    if (g.pending) return g.pending;
     return { seed: g.seed, rects: g.rects, accMs: Math.round(g === game ? elapsed() : g.accMs), penaltyMs: g.penaltyMs, hints: g.hints, solved: g.solved, finalMs: g.finalMs, result: g.result };
   }
   function serialize() {
@@ -1087,28 +1253,31 @@ if (typeof module !== "undefined") module.exports = Shikaku;
   }
   function saveGameSoon() { clearTimeout(saveT); saveT = setTimeout(saveGame, 400); }
   function saveGame() { if (game) writeLocal(KEY_GAME, serialize()); }
+  /* Saved games are rebuilt from their seed only when that level is opened. */
+  function fromSlim(id, s) {
+    try {
+      const g = makeGame(id, Math.floor(s.seed));
+      const n = g.puzzle.w;
+      g.rects = (Array.isArray(s.rects) ? s.rects : [])
+        .filter((r) => r && r.x >= 0 && r.y >= 0 && r.w >= 1 && r.h >= 1 && r.x + r.w <= n && r.y + r.h <= n)
+        .map((r) => ({ x: r.x | 0, y: r.y | 0, w: r.w | 0, h: r.h | 0, c: (r.c | 0) % 8, hint: !!r.hint }));
+      g.accMs = Number(s.accMs) || 0; g.penaltyMs = Number(s.penaltyMs) || 0; g.hints = s.hints | 0;
+      g.solved = !!s.solved && Shikaku.check(g.puzzle, g.rects).solved;
+      g.finalMs = Number(s.finalMs) || 0; g.result = s.result || null;
+      return g;
+    } catch (e) { return null; }
+  }
   function restore(data) {
-    if (!data || !data.games) return false;
-    let any = false;
+    if (!data || !data.games) return null;
+    let first = null;
     for (const lv of LEVELS) {
       const s = data.games[lv.id];
-      if (!s || !s.seed) continue;
-      try {
-        const g = makeGame(lv.id, Math.floor(s.seed));
-        const n = g.puzzle.w;
-        g.rects = (Array.isArray(s.rects) ? s.rects : [])
-          .filter((r) => r && r.x >= 0 && r.y >= 0 && r.w >= 1 && r.h >= 1 && r.x + r.w <= n && r.y + r.h <= n)
-          .map((r) => ({ x: r.x | 0, y: r.y | 0, w: r.w | 0, h: r.h | 0, c: (r.c | 0) % 8, hint: !!r.hint }));
-        g.accMs = Number(s.accMs) || 0; g.penaltyMs = Number(s.penaltyMs) || 0; g.hints = s.hints | 0;
-        g.solved = !!s.solved && Shikaku.check(g.puzzle, g.rects).solved;
-        g.finalMs = Number(s.finalMs) || 0; g.result = s.result || null;
-        games[lv.id] = g; any = true;
-      } catch (e) {}
+      if (!s || !(Number(s.seed) > 0)) continue;
+      games[lv.id] = { level: lv.id, pending: s };
+      if (!first) first = lv.id;
     }
-    if (!any) return false;
-    current = games[data.level] ? data.level : Object.keys(games)[0];
-    game = games[current];
-    return true;
+    if (!first) return null;
+    return games[data.level] ? data.level : first;
   }
 
   /* ---------- confetti ---------- */
@@ -1120,7 +1289,7 @@ if (typeof module !== "undefined") module.exports = Shikaku;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const cs = getComputedStyle(document.documentElement);
     const colors = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => cs.getPropertyValue("--t" + i).trim() || "#FFD66B");
-    const br = board.getBoundingClientRect();
+    const br = scroller.getBoundingClientRect();
     const N = big ? 170 : 90, parts = [];
     for (let i = 0; i < N; i++) {
       parts.push({
@@ -1157,26 +1326,89 @@ if (typeof module !== "undefined") module.exports = Shikaku;
     x = Math.max(0, Math.min(n - 1, x)); y = Math.max(0, Math.min(n - 1, y));
     return { x, y };
   }
+  /* Two fingers pan and pinch-zoom; one finger (or the mouse) draws. */
+  const touchPts = new Map();
+  let gesture = null, gestureLock = false, lastPt = null, autoRaf = 0;
+  function gesturePoints() {
+    const p = [...touchPts.values()];
+    return { mx: (p[0].x + p[1].x) / 2, my: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1 };
+  }
+  function startGesture() {
+    if (drag) { drag = null; hidePreview(); stopAuto(); }
+    const g = gesturePoints(), sr = scroller.getBoundingClientRect();
+    gesture = { d0: g.d, c0: cellPx, bx: (scroller.scrollLeft + g.mx - sr.left - 2) / cellPx, by: (scroller.scrollTop + g.my - sr.top - 2) / cellPx };
+    gestureLock = true;
+  }
+  function moveGesture() {
+    const g = gesturePoints(), sr = scroller.getBoundingClientRect();
+    if (zoomable) {
+      const c = Math.round(Math.min(MAX_CELL, Math.max(fitPx, gesture.c0 * g.d / gesture.d0)));
+      if (c !== cellPx) { zoomBy[game.level] = c; layout(); }
+    }
+    scroller.scrollLeft = gesture.bx * cellPx + 2 - (g.mx - sr.left);
+    scroller.scrollTop = gesture.by * cellPx + 2 - (g.my - sr.top);
+  }
+  function releaseTouch(e) {
+    if (e.pointerType !== "touch") return;
+    touchPts.delete(e.pointerId);
+    if (touchPts.size < 2) gesture = null;
+    if (touchPts.size === 0) gestureLock = false;
+  }
+  function stopAuto() { if (autoRaf) cancelAnimationFrame(autoRaf); autoRaf = 0; }
+  function dragTo(pt) {
+    const c = cellFrom(pt, true);
+    if (c.x !== drag.b.x || c.y !== drag.b.y) { drag.b = c; drag.moved = true; showPreview(drag.a, c); }
+  }
+  /* While drawing near the edge of a big board, scroll toward that edge. */
+  function autoScroll() {
+    autoRaf = 0;
+    if (!drag || !lastPt) return;
+    const r = scroller.getBoundingClientRect(), edge = 32;
+    const sp = (d) => Math.min(14, Math.ceil(d / 3));
+    let dx = 0, dy = 0;
+    if (lastPt.clientX < r.left + edge) dx = -sp(r.left + edge - lastPt.clientX);
+    else if (lastPt.clientX > r.right - edge) dx = sp(lastPt.clientX - (r.right - edge));
+    if (lastPt.clientY < r.top + edge) dy = -sp(r.top + edge - lastPt.clientY);
+    else if (lastPt.clientY > r.bottom - edge) dy = sp(lastPt.clientY - (r.bottom - edge));
+    if (!dx && !dy) return;
+    const sl = scroller.scrollLeft, st = scroller.scrollTop;
+    scroller.scrollLeft += dx; scroller.scrollTop += dy;
+    if (scroller.scrollLeft === sl && scroller.scrollTop === st) return;
+    dragTo(lastPt);
+    autoRaf = requestAnimationFrame(autoScroll);
+  }
   board.addEventListener("pointerdown", (e) => {
-    if (game.solved || paused || drag) return;
+    if (e.pointerType === "touch") {
+      touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touchPts.size === 2 && game && !busy) { e.preventDefault(); startGesture(); return; }
+      if (touchPts.size > 2 || gestureLock) return;
+    }
+    if (locked() || drag) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
     const c = cellFrom(e, false);
     if (!c) return;
     e.preventDefault();
     try { board.setPointerCapture(e.pointerId); } catch (err) {}
     drag = { id: e.pointerId, a: c, b: c, moved: false };
+    lastPt = { clientX: e.clientX, clientY: e.clientY };
     kbd = false; anchor = null; drawCursor();
     showPreview(c, c);
   });
   board.addEventListener("pointermove", (e) => {
+    if (e.pointerType === "touch" && touchPts.has(e.pointerId)) {
+      touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (gesture && touchPts.size >= 2) { moveGesture(); return; }
+    }
     if (!drag || e.pointerId !== drag.id) return;
-    const c = cellFrom(e, true);
-    if (c.x !== drag.b.x || c.y !== drag.b.y) { drag.b = c; drag.moved = true; showPreview(drag.a, c); }
+    lastPt = { clientX: e.clientX, clientY: e.clientY };
+    dragTo(lastPt);
+    if (zoomable && !autoRaf) autoRaf = requestAnimationFrame(autoScroll);
   });
   function endDrag(e, cancel) {
+    releaseTouch(e);
     if (!drag || e.pointerId !== drag.id) return;
     const { a, b, moved } = drag;
-    drag = null; hidePreview();
+    drag = null; hidePreview(); stopAuto();
     if (cancel) return;
     cursor.x = b.x; cursor.y = b.y;
     if (!moved && a.x === b.x && a.y === b.y) { if (!eraseAt(a.x, a.y)) commit(rectOf(a, b)); }
@@ -1184,10 +1416,21 @@ if (typeof module !== "undefined") module.exports = Shikaku;
   }
   board.addEventListener("pointerup", (e) => endDrag(e, false));
   board.addEventListener("pointercancel", (e) => endDrag(e, true));
-  board.addEventListener("lostpointercapture", (e) => { if (drag && e.pointerId === drag.id) { drag = null; hidePreview(); } });
+  board.addEventListener("lostpointercapture", (e) => { if (drag && e.pointerId === drag.id) { drag = null; hidePreview(); stopAuto(); } });
+  scroller.addEventListener("wheel", (e) => {
+    if (!(e.ctrlKey || e.metaKey) || !zoomable) return;
+    e.preventDefault();
+    zoomTo(cellPx * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+  }, { passive: false });
+  $("zoomIn").addEventListener("click", () => zoomTo(cellPx * 1.25));
+  $("zoomOut").addEventListener("click", () => zoomTo(cellPx / 1.25));
+  $("zoomFit").addEventListener("click", () => zoomTo(fitPx));
 
   board.addEventListener("keydown", (e) => {
-    if (game.solved || paused) return;
+    if (!game || busy) return;
+    if (!e.ctrlKey && !e.metaKey && (e.key === "+" || e.key === "=")) { e.preventDefault(); zoomTo(cellPx * 1.25); return; }
+    if (!e.ctrlKey && !e.metaKey && (e.key === "-" || e.key === "_")) { e.preventDefault(); zoomTo(cellPx / 1.25); return; }
+    if (locked()) return;
     const n = game.puzzle.w, k = e.key;
     let dx = 0, dy = 0;
     if (k === "ArrowLeft") dx = -1; else if (k === "ArrowRight") dx = 1; else if (k === "ArrowUp") dy = -1; else if (k === "ArrowDown") dy = 1;
@@ -1195,7 +1438,7 @@ if (typeof module !== "undefined") module.exports = Shikaku;
       e.preventDefault(); kbd = true;
       cursor.x = Math.max(0, Math.min(n - 1, cursor.x + dx)); cursor.y = Math.max(0, Math.min(n - 1, cursor.y + dy));
       if (anchor) showPreview(anchor, cursor);
-      drawCursor(); return;
+      drawCursor(); ensureVisible({ x: cursor.x, y: cursor.y, w: 1, h: 1 }, false); return;
     }
     if (k === "Enter" || k === " ") {
       e.preventDefault(); kbd = true;
@@ -1238,19 +1481,15 @@ if (typeof module !== "undefined") module.exports = Shikaku;
   });
 
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) { if (clock.running && !game.solved) pause(); else saveGame(); }
+    if (document.hidden) { if (game && clock.running && !game.solved) pause(); else saveGame(); }
   });
   window.addEventListener("pagehide", saveGame);
 
   /* ---------- boot ---------- */
   function start(hotData) {
     const fromHot = !!(hotData && hotData.games);
-    const restored = restore(fromHot ? hotData : readLocal(KEY_GAME));
-    if (!restored) { current = LEVELS[0].id; game = makeGame(current, randomSeed()); games[current] = game; }
-    buildBoard(); render(null); renderRecords();
-    if (game.solved) showWin();
-    else if (restored && !(fromHot && hotData.running)) pause("Welcome back", "Your puzzle is saved. The clock starts again when you continue.");
-    else startClock();
+    const lvl = restore(fromHot ? hotData : readLocal(KEY_GAME));
+    load(lvl || LEVELS[0].id, false, lvl && !(fromHot && hotData.running) ? "welcome" : "run");
     connectRemote();
   }
   try {
